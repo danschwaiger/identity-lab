@@ -31,6 +31,10 @@ for vol in identity-lab_keycloak-data identity-lab_redis-data; do
   fi
 done
 
+# These files contain no secrets and must be readable by non-root containers.
+chmod 755 nginx nginx/templates tyk tyk/apps
+chmod 644 nginx/templates/default.conf.template tyk/tyk.conf tyk/apps/demo-
+
 admin_password=$(openssl rand -hex 24)
 gateway_secret=$(openssl rand -hex 32)
 cookie_secret=$(openssl rand -base64 32 | tr '+/' '-_')
