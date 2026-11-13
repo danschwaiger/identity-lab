@@ -1,0 +1,21 @@
+{
+  "name": "Lab Demo API",
+  "api_id": "lab-demo-api",
+  "org_id": "lab",
+  "active": true,
+  "use_keyless": true,
+  "version_data": {
+    "not_versioned": true,
+    "versions": {
+      "Default": {
+        "name": "Default",
+        "use_extended_paths": true
+      }
+    }
+  },
+  "proxy": {
+    "listen_path": "/demo/",
+    "target_url": "http://demo-api:5678/",
+    "strip_listen_path": true
+  }
+}
