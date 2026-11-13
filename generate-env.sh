@@ -9,3 +9,5 @@ TYK_GW_SECRET=$(openssl rand -hex 32)
 OAUTH2_PROXY_COOKIE_SECRET=$(openssl rand -base64 32 | tr '+/' '-_')
 OAUTH2_PROXY_CLIENT_SECRET=REPLACE_ME
 EOF
+
+chmod 600 .env
