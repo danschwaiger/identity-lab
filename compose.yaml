@@ -1,28 +1,106 @@
-#!/bin/sh
-# Destructive reset: remove this Compose project's containers, volumes and generated configuration.
-set -eu
-cd "$(dirname "$0")"
-: "${LAB_HOST:?Set LAB_HOST, for example LAB_HOST=lab.example.test sh rebuild.sh}"
-if ! printf '%s\n' "$LAB_HOST" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$'; then
-  echo 'LAB_HOST must be a DNS hostname (not an IP address or URL).' >&2
-  exit 1
-fi
-command -v openssl >/dev/null || { echo 'openssl is required.' >&2; exit 1; }
-command -v docker >/dev/null || { echo 'Docker and Docker Compose are required.' >&2; exit 1; }
-docker compose version >/dev/null
-# Verify that the daemon is reachable before changing anything.
-docker info >/dev/null
-printf '%s\n' 'WARNING: This destroys the identity-lab Compose project, including its Keycloak and Redis volumes.' \
-  'It also deletes this directory’s .env and certs directory and generates a new CA and new secrets.' \
-  'You will need to configure Keycloak again and trust the new CA on your workstation.'
-printf 'Type RESET to continue: '
-IFS= read -r answer
-if [ "$answer" != RESET ]; then
-  echo 'Cancelled; nothing was changed.'
-  exit 1
-fi
-# The sample file supplies non-secret interpolation values even if .env was lost.
-docker compose --project-name identity-lab --file compose.yaml --env-file .env.example down --volumes --remove-orphans
-rm -f .env
-rm -rf certs
-LAB_HOST="$LAB_HOST" sh ./setup.sh
+name: identity-lab
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    environment:
+      LAB_HOST: ${LAB_HOST:?Set LAB_HOST in .env}
+      NGINX_ENVSUBST_FILTER: "^LAB_HOST$"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./certs/lab-server.crt:/etc/nginx/certs/lab-server.crt:ro
+      - ./certs/lab-server.key:/etc/nginx/certs/lab-server.key:ro
+    networks:
+      lab:
+        ipv4_address: 172.30.42.10
+        aliases:
+          - ${LAB_HOST}
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3.3
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --hostname=https://${LAB_HOST}/auth
+      - --http-relative-path=/auth
+      - --http-enabled=true
+      - --proxy-headers=xforwarded
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    networks:
+      - lab
+
+  redis:
+    image: redis:8.2.0
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - lab
+
+  tyk:
+    image: tykio/tyk-gateway:v5.8.20
+    restart: unless-stopped
+    environment:
+      TYK_GW_SECRET: ${TYK_GW_SECRET}
+    volumes:
+      - ./tyk/tyk.conf:/opt/tyk-gateway/tyk.conf:ro
+      - ./tyk/apps:/opt/tyk-gateway/apps:ro
+    depends_on:
+      - redis
+    networks:
+      - lab
+
+  demo-api:
+    image: hashicorp/http-echo:1.0.0
+    restart: unless-stopped
+    command:
+      - -listen=:5678
+      - -text=Hello from the demo API through Tyk!
+    networks:
+      - lab
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.6
+    restart: unless-stopped
+    command:
+      - --provider=keycloak-oidc
+      - --oidc-issuer-url=https://${LAB_HOST}/auth/realms/lab
+      - --client-id=lab-app
+      - --redirect-url=https://${LAB_HOST}/oauth2/callback
+      - --code-challenge-method=S256
+      - --provider-ca-file=/etc/oauth2-proxy/certs/lab-ca.crt
+      - --use-system-trust-store=true
+      - --http-address=0.0.0.0:4180
+      - --reverse-proxy=true
+      - --trusted-proxy-ip=172.30.42.10/32
+      - --email-domain=lab.test
+      - --skip-provider-button=true
+      - --cookie-secure=true
+      - --cookie-httponly=true
+      - --cookie-samesite=lax
+      - --upstream=http://tyk:8080/
+    environment:
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
+    volumes:
+      - ./certs/lab-ca.crt:/etc/oauth2-proxy/certs/lab-ca.crt:ro
+    networks:
+      - lab
+
+volumes:
+  keycloak-data:
+  redis-data:
+
+networks:
+  lab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.42.0/24
