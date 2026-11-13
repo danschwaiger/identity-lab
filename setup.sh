@@ -13,6 +13,7 @@ fi
 command -v openssl >/dev/null || { echo 'openssl is required.' >&2; exit 1; }
 command -v docker >/dev/null || { echo 'Docker and Docker Compose are required.' >&2; exit 1; }
 docker compose version >/dev/null
+docker info >/dev/null
 if [ -e .env ] || [ -e certs ]; then
   echo 'Existing .env or certs found. Nothing was changed. Use rebuild.sh to reset the lab.' >&2
   exit 1
