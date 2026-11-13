@@ -1,0 +1,51 @@
+server {
+    listen 443 ssl;
+    server_name ${LAB_HOST};
+
+    ssl_certificate     /etc/nginx/certs/lab-server.crt;
+    ssl_certificate_key /etc/nginx/certs/lab-server.key;
+
+    resolver 127.0.0.11 valid=10s;
+
+    location = / {
+        default_type text/plain;
+        return 200 "Identity lab is running. Open /auth/ or /demo/.\n";
+    }
+
+    location /auth/ {
+        set $keycloak_backend keycloak:8080;
+        proxy_pass http://$keycloak_backend$request_uri;
+        proxy_set_header Host              ${LAB_HOST};
+        proxy_set_header X-Forwarded-Host  ${LAB_HOST};
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Port  443;
+        proxy_set_header X-Forwarded-For   $remote_addr;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-Prefix "";
+        proxy_set_header Forwarded "";
+    }
+
+    location /oauth2/ {
+        set $oauth_backend oauth2-proxy:4180;
+        proxy_pass http://$oauth_backend$request_uri;
+        proxy_set_header Host              ${LAB_HOST};
+        proxy_set_header X-Forwarded-Host  ${LAB_HOST};
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Port  443;
+        proxy_set_header X-Forwarded-For   $remote_addr;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header Forwarded "";
+    }
+
+    location /demo/ {
+        set $oauth_backend oauth2-proxy:4180;
+        proxy_pass http://$oauth_backend$request_uri;
+        proxy_set_header Host              ${LAB_HOST};
+        proxy_set_header X-Forwarded-Host  ${LAB_HOST};
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Port  443;
+        proxy_set_header X-Forwarded-For   $remote_addr;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header Forwarded "";
+    }
+}
