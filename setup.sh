@@ -47,5 +47,8 @@ openssl x509 -req -in certs/lab-server.csr \
   -out certs/lab-server.crt -days 365 -sha256 \
   -extfile certs/server-extensions.cnf
 
+# The CA certificate is public; oauth2-proxy needs to read it.
+chmod 644 certs/lab-ca.crt
+
 docker compose --project-name identity-lab --file compose.yaml up -d nginx keycloak redis tyk demo-api
 printf '\nInitial services started. Follow README.md to trust the CA, configure Keycloak and start oauth2-proxy.\n'
